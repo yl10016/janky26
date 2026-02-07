@@ -300,40 +300,33 @@ export function generateTemplatePortfolios(numAssets, assetNames) {
 /**
  * Full pipeline: from raw price data to optimized portfolio.
  */
-export function runOptimization(priceData, tickers, gamma) {
-  // Compute returns for each ticker
-  const allReturns = [];
-  const validTickers = [];
-  const meanReturns = [];
+export function runOptimization(marketData, tickers, gamma) {
+  const { summary, covariance } = marketData;
 
-  for (const ticker of tickers) {
-    const prices = priceData[ticker];
-    if (!prices || prices.length < 30) continue; // need enough data
-
-    const closePrices = prices.map(p => p.close);
-    const returns = computeReturns(closePrices);
-    const stats = computeStats(returns);
-
-    allReturns.push(returns);
-    validTickers.push(ticker);
-    meanReturns.push(stats.mean);
-  }
-
+  // Filter tickers to only those that exist in both summary and covariance data
+  const validTickers = tickers.filter(ticker => 
+    summary[ticker] && covariance.tickers.includes(ticker)
+  );
+  
   if (validTickers.length < 2) {
     throw new Error('Not enough valid ticker data for optimization');
   }
 
-  // Align return lengths (some assets might have different trading days)
-  const minLen = Math.min(...allReturns.map(r => r.length));
-  const alignedReturns = allReturns.map(r => r.slice(r.length - minLen));
+  const meanReturns = validTickers.map(ticker => summary[ticker].mean);
 
-  // Compute covariance matrix
-  const covMatrix = computeCovarianceMatrix(alignedReturns);
-
+  // Extract the covariance submatrix for the valid tickers
+  const tickerIndices = validTickers.map(ticker => 
+    covariance.tickers.indexOf(ticker)
+  );
+  
+  const covMatrix = tickerIndices.map(i => 
+    tickerIndices.map(j => covariance.matrix[i][j])
+  );
+  
   // Optimize
   const optimal = optimizePortfolio(meanReturns, covMatrix, gamma);
-
-  // Generate templates for comparison
+  
+  // ... rest of the function
   const templates = generateTemplatePortfolios(validTickers.length, validTickers);
   const templateResults = templates.map(t => {
     const stats = computePortfolioStats(t.weights, meanReturns, covMatrix);
@@ -341,11 +334,10 @@ export function runOptimization(priceData, tickers, gamma) {
     return { name: t.name, weights: t.weights, ...stats, eu };
   });
 
-  // Build portfolio with ticker names
   const portfolio = validTickers.map((ticker, i) => ({
     ticker,
     weight: optimal.weights[i],
-  })).filter(p => p.weight > 0.001) // filter out negligible allocations
+  })).filter(p => p.weight > 0.001)
     .sort((a, b) => b.weight - a.weight);
 
   return {
