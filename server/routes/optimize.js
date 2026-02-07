@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { fetchAllPrices } from '../utils/polygon.js';
+import { fetchAllMarketData } from '../utils/polygon.js';
 import { runOptimization } from '../utils/portfolio.js';
 
 const router = Router();
@@ -26,10 +26,10 @@ router.post('/', async (req, res) => {
     }
 
     // Fetch market data (cached after first call)
-    const priceData = await fetchAllPrices(ASSET_UNIVERSE);
+    const marketData = await fetchAllMarketData(ASSET_UNIVERSE);
 
     // Run optimization
-    const result = runOptimization(priceData, ASSET_UNIVERSE, gamma);
+    const result = runOptimization(marketData, ASSET_UNIVERSE, gamma);
 
     res.json(result);
   } catch (err) {

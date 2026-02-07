@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { fetchAllPrices } from '../utils/polygon.js';
+import { fetchAllMarketData } from '../utils/polygon.js';
 
 const router = Router();
 
@@ -20,8 +20,8 @@ const ASSET_UNIVERSE = [
  */
 router.get('/', async (_req, res) => {
   try {
-    const data = await fetchAllPrices(ASSET_UNIVERSE);
-    res.json({ tickers: Object.keys(data), data });
+    const data = await fetchAllMarketData(ASSET_UNIVERSE);
+    res.json({ tickers: Object.keys(data.summary), data: data.summary });
   } catch (err) {
     console.error('Market data error:', err);
     res.status(500).json({ error: 'Failed to fetch market data' });
