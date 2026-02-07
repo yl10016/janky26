@@ -15,6 +15,7 @@ def process_asset_data(assets_folder, summary_output_file, covariance_output_fil
     all_returns = {}
     asset_files = [f for f in os.listdir(assets_folder) if f.endswith('.csv')]
     trading_days = 252
+    min_history_days = 1260  # Require at least 5 years of data (252 * 5)
 
     for asset_file in asset_files:
         ticker = asset_file.split('_')[0].upper()
@@ -24,7 +25,14 @@ def process_asset_data(assets_folder, summary_output_file, covariance_output_fil
             df = pd.read_csv(file_path, index_col='Date', parse_dates=True)
             if 'Close' not in df.columns:
                 continue
-            daily_returns = df['Close'].pct_change().dropna()
+            
+            # Skip assets with insufficient history
+            if len(df) < min_history_days:
+                print(f"Skipping {ticker}: only {len(df)} days (need {min_history_days})")
+                continue
+                
+            # Use log returns for proper statistical properties and annualization
+            daily_returns = np.log(df['Close'] / df['Close'].shift(1)).dropna()
             all_returns[ticker] = daily_returns
         except Exception as e:
             print(f"Error processing {asset_file}: {e}")
@@ -40,9 +48,32 @@ def process_asset_data(assets_folder, summary_output_file, covariance_output_fil
     mean_returns = returns_df.mean() * trading_days
     volatility = returns_df.std() * np.sqrt(trading_days)
     
+    # Apply Bayesian shrinkage toward market mean to reduce overfitting
+    # Use adaptive shrinkage: assets with extreme Sharpe ratios get shrunk more
+    if 'SPY' in returns_df.columns:
+        market_return = returns_df['SPY'].mean() * trading_days
+        market_vol = returns_df['SPY'].std() * np.sqrt(trading_days)
+        market_sharpe = market_return / market_vol
+    else:
+        market_return = mean_returns.mean()
+        market_sharpe = 0.7
+    
+    # Calculate Sharpe ratios
+    sharpe_ratios = mean_returns / volatility
+    
+    # Adaptive shrinkage: stronger for assets with Sharpe > 1.5x market
+    # tau = weight on historical return (lower tau = more shrinkage toward market)
+    tau = np.where(
+        sharpe_ratios > 1.5 * market_sharpe,
+        0.20,  # Only 20% weight on historical for very high Sharpe (80% toward market)
+        0.40   # 40% weight on historical for normal assets (60% toward market)
+    )
+    
+    shrunken_returns = (1 - tau) * market_return + tau * mean_returns
+    
     summary_df = pd.DataFrame({
         'Ticker': returns_df.columns,
-        'Mean': mean_returns.values,
+        'Mean': shrunken_returns.values,
         'Volatility': volatility.values
     })
     summary_df.to_csv(summary_output_file, index=False)

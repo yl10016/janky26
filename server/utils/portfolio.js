@@ -182,11 +182,27 @@ function projectOntoSimplex(weights) {
 }
 
 /**
- * Optimize portfolio using constrained mean-variance approach.
+ * Map gamma (risk aversion) to target portfolio volatility.
+ * Higher gamma = more risk averse = lower target volatility
+ */
+function gammaToTargetVolatility(gamma) {
+  // gamma < 1.5: aggressive, target 18-22% vol
+  // gamma 1.5-2.5: growth, target 13-18% vol  
+  // gamma 2.5-3.5: balanced, target 9-13% vol
+  // gamma > 3.5: conservative, target 5-9% vol
+  if (gamma < 1.5) return 0.20;
+  if (gamma < 2.0) return 0.16;
+  if (gamma < 2.5) return 0.13;
+  if (gamma < 3.0) return 0.11;
+  if (gamma < 3.5) return 0.08;
+  return 0.06;
+}
+
+/**
+ * Optimize portfolio to match target risk level with maximum diversification.
  *
- * 1. Compute unconstrained analytical solution: w* = (1/γ) * Σ⁻¹ * μ
- * 2. Project onto simplex (no shorting, weights sum to 1)
- * 3. Refine with coordinate descent on EU
+ * Strategy: Target a specific volatility based on gamma, then maximize return
+ * subject to diversity constraints.
  *
  * @param {number[]} means - Annualized mean returns for each asset
  * @param {number[][]} covMatrix - NxN annualized covariance matrix
@@ -195,45 +211,109 @@ function projectOntoSimplex(weights) {
  */
 export function optimizePortfolio(means, covMatrix, gamma) {
   const n = means.length;
-
-  // Step 1: Analytical unconstrained solution w* = (1/γ) * Σ⁻¹ * μ
-  const covInv = invertMatrix(covMatrix.map(row => [...row]));
-  const wUnconstrained = new Array(n);
-  for (let i = 0; i < n; i++) {
-    let sum = 0;
-    for (let j = 0; j < n; j++) {
-      sum += covInv[i][j] * means[j];
+  const targetVol = gammaToTargetVolatility(gamma);
+  
+  // Start with equal weights
+  let weights = new Array(n).fill(1 / n);
+  
+  // Diversity and concentration constraints
+  const minWeight = 0.04;  // Minimum 4% per position
+  const maxWeight = 0.30;  // Maximum 30% in any single asset (reduced to force diversification)
+  const minHoldings = Math.min(10, Math.floor(1 / minWeight)); // At least 10 holdings
+  
+  // Helper function to enforce weight constraints
+  function enforceConstraints(w) {
+    // Cap at max weight
+    for (let i = 0; i < n; i++) {
+      if (w[i] > maxWeight) {
+        const excess = w[i] - maxWeight;
+        w[i] = maxWeight;
+        
+        // Distribute excess proportionally to assets under the cap
+        const underCap = w.map((wgt, idx) => idx).filter(idx => w[idx] < maxWeight);
+        if (underCap.length > 0) {
+          const totalUnder = underCap.reduce((sum, idx) => sum + w[idx], 0);
+          underCap.forEach(idx => {
+            const share = w[idx] / totalUnder;
+            w[idx] += excess * share;
+          });
+        }
+      }
     }
-    wUnconstrained[i] = sum / gamma;
+    
+    // Normalize to sum to 1
+    const sum = w.reduce((s, wgt) => s + wgt, 0);
+    return w.map(wgt => wgt / sum);
   }
-
-  // Step 2: Project onto simplex
-  let weights = projectOntoSimplex(wUnconstrained);
-
-  // Step 3: Coordinate descent refinement (20 iterations)
-  const step = 0.02;
-  for (let iter = 0; iter < 20; iter++) {
-    const { mu, variance } = computePortfolioStats(weights, means, covMatrix);
-    let bestEU = computeExpectedUtility(mu, variance, gamma);
-
+  
+  // Apply initial constraints
+  weights = enforceConstraints(weights);
+  
+  // Iterative optimization: maximize return while staying near target volatility
+  const step = 0.01;
+  const volTolerance = 0.02; // Allow ±2% deviation from target vol
+  
+  for (let iter = 0; iter < 100; iter++) {
+    const stats = computePortfolioStats(weights, means, covMatrix);
+    const currentVol = stats.vol;
+    
+    // Score: return - penalty for vol deviation
+    const volPenalty = Math.abs(currentVol - targetVol) > volTolerance 
+      ? 100 * (Math.abs(currentVol - targetVol) - volTolerance) ** 2 
+      : 0;
+    let bestScore = stats.mu - volPenalty;
+    let improved = false;
+    
+    // Try all pairwise weight shifts
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < n; j++) {
         if (i === j) continue;
-        if (weights[i] < step) continue; // can't reduce below 0
-
-        // Try shifting weight from asset i to asset j
+        if (weights[i] < step) continue;
+        
+        // STRICT enforcement: never exceed maxWeight
+        if (weights[j] >= maxWeight - 0.001) continue;
+        
         const trial = [...weights];
         trial[i] -= step;
         trial[j] += step;
-
+        
+        // Double-check we didn't violate max weight
+        if (trial[j] > maxWeight) continue;
+        
+        // Enforce minimum holdings
+        const nonZero = trial.filter(w => w >= minWeight).length;
+        if (nonZero < minHoldings && trial[i] < minWeight) continue;
+        
         const trialStats = computePortfolioStats(trial, means, covMatrix);
-        const trialEU = computeExpectedUtility(trialStats.mu, trialStats.variance, gamma);
-
-        if (trialEU > bestEU) {
+        const trialVolPenalty = Math.abs(trialStats.vol - targetVol) > volTolerance
+          ? 100 * (Math.abs(trialStats.vol - targetVol) - volTolerance) ** 2
+          : 0;
+        const trialScore = trialStats.mu - trialVolPenalty;
+        
+        if (trialScore > bestScore) {
           weights = trial;
-          bestEU = trialEU;
+          // Enforce constraints immediately after every change
+          weights = enforceConstraints(weights);
+          bestScore = trialScore;
+          improved = true;
         }
       }
+    }
+    
+    if (!improved) break;
+  }
+  
+  // Final enforcement of constraints
+  weights = enforceConstraints(weights);
+  
+  // Clean up: remove positions below minimum weight
+  const numHoldings = weights.filter(w => w >= minWeight).length;
+  if (numHoldings >= minHoldings) {
+    const filtered = weights.map(w => w >= minWeight ? w : 0);
+    const sum = filtered.reduce((s, w) => s + w, 0);
+    if (sum > 0) {
+      weights = filtered.map(w => w / sum);
+      weights = enforceConstraints(weights); // Re-enforce after cleanup
     }
   }
 
@@ -243,9 +323,15 @@ export function optimizePortfolio(means, covMatrix, gamma) {
   return { weights, mu: stats.mu, variance: stats.variance, vol: stats.vol, eu };
 }
 
-const BOND_TICKERS = ['BND', 'TLT', 'IEF', 'SHY', 'AGG', 'LQD'];
-const EQUITY_TICKERS = ['SPY', 'QQQ', 'IWM', 'VTI', 'EFA', 'EEM', 'XLK', 'XLF', 'XLE', 'XLV'];
-const ALT_TICKERS = ['VNQ', 'GLD', 'SLV', 'DBC'];
+const BOND_TICKERS = ['BND', 'TLT', 'IEF', 'SHY', 'AGG', 'LQD', "bndx","scho","mbb","igib","scmb",
+    "vteb","emlc","ebnd","pff","hylb",
+    "qlta","jnk","vclt","govt","tipz"];
+const EQUITY_TICKERS = ['SPY', 'QQQ', 'IWM', 'VTI', 'EFA', 'EEM', 'XLK', 'XLF', 'XLE', 'XLV', "voo","schx","vb","schg","vug","vtv",
+    "vea","acwi","iemg","iefa",
+    "dia","xlre","iyw","ihf","xly"];
+const ALT_TICKERS = ['VNQ', 'GLD', 'SLV', 'DBC', "dbmf","ffut","qai",
+    "alty","espo","esgu","tan",
+    "bug","gdx","vde","lit","bjk"];
 
 /**
  * Compute asset class breakdown (bonds / equity / alts) from holdings.
@@ -353,8 +439,23 @@ export function runOptimization(marketData, tickers, gamma) {
     return { name: t.name, weights: t.weights, ...stats, eu };
   });
 
+  // Asset name mapping
+  const assetNames = {
+    'SPY': 'S&P 500 ETF', 'QQQ': 'Nasdaq 100 ETF', 'IWM': 'Russell 2000 ETF',
+    'VTI': 'Total Stock Market ETF', 'VOO': 'Vanguard S&P 500 ETF',
+    'BND': 'Total Bond Market ETF', 'AGG': 'Core Bond ETF', 
+    'TLT': 'Long-Term Treasury ETF', 'IEF': 'Intermediate Treasury ETF',
+    'SHY': 'Short-Term Treasury ETF', 'LQD': 'Investment Grade Corp Bonds',
+    'GLD': 'Gold ETF', 'SLV': 'Silver ETF', 'DBC': 'Commodities ETF',
+    'VNQ': 'Real Estate ETF', 'EFA': 'Developed Markets ETF',
+    'EEM': 'Emerging Markets ETF', 'XLK': 'Technology Sector ETF',
+    'XLF': 'Financial Sector ETF', 'XLE': 'Energy Sector ETF',
+    'XLV': 'Healthcare Sector ETF'
+  };
+  
   const portfolio = validTickers.map((ticker, i) => ({
     ticker,
+    name: assetNames[ticker] || ticker.replace('.CSV', ''),
     weight: optimal.weights[i],
   })).filter(p => p.weight > 0.001)
     .sort((a, b) => b.weight - a.weight);

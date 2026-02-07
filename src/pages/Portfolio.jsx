@@ -172,6 +172,7 @@ export default function Portfolio() {
           <thead>
             <tr className="border-b border-gray-200">
               <th className="py-2 text-sm font-medium text-gray-500">Ticker</th>
+              <th className="py-2 text-sm font-medium text-gray-500">Asset</th>
               <th className="py-2 text-sm font-medium text-gray-500 text-right">Weight</th>
               <th className="py-2 text-sm font-medium text-gray-500 text-right">Allocation</th>
             </tr>
@@ -180,6 +181,7 @@ export default function Portfolio() {
             {result.portfolio.map(h => (
               <tr key={h.ticker} className="border-b border-gray-100">
                 <td className="py-3 font-semibold text-gray-800">{h.ticker}</td>
+                <td className="py-3 text-gray-600 text-sm">{h.name}</td>
                 <td className="py-3 text-right text-gray-600">
                   {(h.weight * 100).toFixed(1)}%
                 </td>
