@@ -349,55 +349,42 @@ export function computeAssetClassBreakdown(holdings) {
 }
 
 /**
- * Generate template portfolios for comparison / efficient frontier display.
- * Returns an array of { name, weights } objects.
+ * Generate optimized template portfolios for comparison / efficient frontier display.
+ * Each template is optimized to maximize return at its target volatility level.
+ * @param {number[]} means - Annualized mean returns for each asset
+ * @param {number[][]} covMatrix - NxN annualized covariance matrix
+ * @param {string[]} assetNames - Asset ticker names
+ * @returns {Array<{ name: string, weights: number[], gamma: number }>}
  */
-export function generateTemplatePortfolios(numAssets, assetNames) {
+export function generateTemplatePortfolios(means, covMatrix, assetNames) {
   const templates = [];
 
-  // Equal weight
-  const eqWeight = new Array(numAssets).fill(1 / numAssets);
-  templates.push({ name: 'Equal Weight', weights: eqWeight });
+  // Equal weight (baseline, not optimized)
+  const n = means.length;
+  const eqWeight = new Array(n).fill(1 / n);
+  templates.push({ name: 'Equal Weight', weights: eqWeight, gamma: null });
 
-  // Find indices by asset class
-  const bondTickers = BOND_TICKERS;
-  const equityTickers = EQUITY_TICKERS;
-  const altTickers = ALT_TICKERS;
+  // Map risk levels to gamma values (inverse relationship)
+  // Higher gamma = more risk averse = lower volatility
+  const riskProfiles = [
+    { name: 'Very Conservative', gamma: 5.0 },   // ~5-6% vol
+    { name: 'Conservative', gamma: 4.0 },        // ~6-8% vol
+    { name: 'Moderate', gamma: 3.0 },            // ~9-11% vol
+    { name: 'Balanced', gamma: 2.5 },            // ~11-13% vol
+    { name: 'Growth', gamma: 2.0 },              // ~14-16% vol
+    { name: 'Aggressive', gamma: 1.5 },          // ~17-20% vol
+    { name: 'Very Aggressive', gamma: 1.0 },     // ~20-22% vol
+  ];
 
-  const bondIdx = assetNames.map((name, i) => bondTickers.includes(name) ? i : -1).filter(i => i >= 0);
-  const equityIdx = assetNames.map((name, i) => equityTickers.includes(name) ? i : -1).filter(i => i >= 0);
-  const altIdx = assetNames.map((name, i) => altTickers.includes(name) ? i : -1).filter(i => i >= 0);
-
-  // Conservative: 70% bonds, 20% equity, 10% alts
-  const conservative = new Array(numAssets).fill(0);
-  bondIdx.forEach(i => conservative[i] = 0.70 / bondIdx.length);
-  equityIdx.forEach(i => conservative[i] = 0.20 / equityIdx.length);
-  altIdx.forEach(i => conservative[i] = 0.10 / altIdx.length);
-  templates.push({ name: 'Conservative', weights: conservative });
-
-  // Balanced: 40% bonds, 50% equity, 10% alts
-  const balanced = new Array(numAssets).fill(0);
-  bondIdx.forEach(i => balanced[i] = 0.40 / bondIdx.length);
-  equityIdx.forEach(i => balanced[i] = 0.50 / equityIdx.length);
-  altIdx.forEach(i => balanced[i] = 0.10 / altIdx.length);
-  templates.push({ name: 'Balanced', weights: balanced });
-
-  // Aggressive: 10% bonds, 80% equity, 10% alts
-  const aggressive = new Array(numAssets).fill(0);
-  bondIdx.forEach(i => aggressive[i] = 0.10 / bondIdx.length);
-  equityIdx.forEach(i => aggressive[i] = 0.80 / equityIdx.length);
-  altIdx.forEach(i => aggressive[i] = 0.10 / altIdx.length);
-  templates.push({ name: 'Aggressive', weights: aggressive });
-
-  // All equity
-  const allEquity = new Array(numAssets).fill(0);
-  equityIdx.forEach(i => allEquity[i] = 1.0 / equityIdx.length);
-  templates.push({ name: 'All Equity', weights: allEquity });
-
-  // All bonds
-  const allBonds = new Array(numAssets).fill(0);
-  bondIdx.forEach(i => allBonds[i] = 1.0 / bondIdx.length);
-  templates.push({ name: 'All Bonds', weights: allBonds });
+  // Generate optimized portfolio for each risk profile
+  for (const profile of riskProfiles) {
+    const optimal = optimizePortfolio(means, covMatrix, profile.gamma);
+    templates.push({ 
+      name: profile.name, 
+      weights: optimal.weights,
+      gamma: profile.gamma
+    });
+  }
 
   return templates;
 }
@@ -431,12 +418,14 @@ export function runOptimization(marketData, tickers, gamma) {
   // Optimize
   const optimal = optimizePortfolio(meanReturns, covMatrix, gamma);
   
-  // ... rest of the function
-  const templates = generateTemplatePortfolios(validTickers.length, validTickers);
+  // Generate optimized template portfolios at different risk levels
+  const templates = generateTemplatePortfolios(meanReturns, covMatrix, validTickers);
   const templateResults = templates.map(t => {
     const stats = computePortfolioStats(t.weights, meanReturns, covMatrix);
-    const eu = computeExpectedUtility(stats.mu, stats.variance, gamma);
-    return { name: t.name, weights: t.weights, ...stats, eu };
+    // Use the template's own gamma for EU calculation if available, otherwise use user's gamma
+    const templateGamma = t.gamma !== null ? t.gamma : gamma;
+    const eu = computeExpectedUtility(stats.mu, stats.variance, templateGamma);
+    return { name: t.name, weights: t.weights, ...stats, eu, gamma: templateGamma };
   });
 
   // Asset name mapping
