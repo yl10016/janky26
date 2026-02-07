@@ -65,7 +65,7 @@ export function updateRange(lo, hi, indifferenceGamma, choice) {
 
   // Prevent degenerate ranges
   if (newLo >= newHi) {
-    newLo = Math.max(0.1, newLo - 0.2);
+    newLo = Math.max(1.0, newLo - 0.2);
     newHi = newLo + 0.4;
   }
 

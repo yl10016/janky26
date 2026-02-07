@@ -57,11 +57,11 @@ export default function Results() {
         <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
           <div className="text-sm text-gray-500 mb-1">What This Means</div>
           <div className="text-sm text-gray-600 leading-relaxed">
-            {gamma < 1 && 'You prefer high-risk, high-reward investments. You\'re comfortable with large swings for the chance of outsized gains.'}
-            {gamma >= 1 && gamma < 3 && 'You accept moderate risk for higher returns. You\'re comfortable with some volatility in exchange for growth.'}
-            {gamma >= 3 && gamma < 5 && 'You prefer a balanced approach — some growth potential with reasonable downside protection.'}
-            {gamma >= 5 && gamma < 7 && 'You prioritize capital preservation. You prefer stable returns over potential gains.'}
-            {gamma >= 7 && 'You strongly prefer safety. You want minimal volatility even if it means lower returns.'}
+            {gamma < 1.5 && 'You accept significant risk for higher returns. You\'re comfortable with volatility in exchange for growth potential.'}
+            {gamma >= 1.5 && gamma < 2.5 && 'You lean toward growth but want some downside protection. You tolerate moderate swings.'}
+            {gamma >= 2.5 && gamma < 3.0 && 'You prefer a balanced approach — some growth potential with reasonable downside protection.'}
+            {gamma >= 3.0 && gamma < 3.5 && 'You prioritize stability. You prefer steady returns over potential gains.'}
+            {gamma >= 3.5 && 'You strongly prefer safety. You want minimal volatility even if it means lower returns.'}
           </div>
         </div>
       </div>

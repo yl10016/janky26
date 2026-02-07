@@ -9,7 +9,7 @@
  *   EU_B(γ) = expected utility of option B under CRRA with parameter γ
  *   λ = sensitivity parameter (higher = more deterministic choices)
  *
- * We do a grid search over γ ∈ [0.1, 10.0] to find the MLE estimate.
+ * We do a grid search over γ ∈ [1.0, 4.0] to find the MLE estimate.
  */
 
 import { expectedUtility } from './crra.js';
@@ -58,12 +58,12 @@ function logLikelihood(choices, gamma) {
  */
 export function inferGamma(choices) {
   if (choices.length === 0) {
-    return { gamma: 3.0, confidence: [0.1, 10.0], logLikelihood: 0 };
+    return { gamma: 2.5, confidence: [1.0, 4.0], logLikelihood: 0 };
   }
 
-  const GAMMA_MIN = 0.1;
-  const GAMMA_MAX = 10.0;
-  const STEP = 0.05;
+  const GAMMA_MIN = 1.0;
+  const GAMMA_MAX = 4.0;
+  const STEP = 0.02;
 
   let bestGamma = 3.0;
   let bestLL = -Infinity;

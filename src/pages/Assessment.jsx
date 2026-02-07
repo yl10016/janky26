@@ -10,7 +10,7 @@ export default function Assessment() {
   const navigate = useNavigate();
 
   // Adaptive search state: range [lo, hi] and midpoint estimate
-  const [range, setRange] = useState({ lo: 0.1, hi: 10.0, estimate: 3.0 });
+  const [range, setRange] = useState({ lo: 1.0, hi: 4.0, estimate: 2.5 });
   const [answeredIds, setAnsweredIds] = useState(new Set());
   const [choices, setChoices] = useState([]);
   const [questionNum, setQuestionNum] = useState(1);
