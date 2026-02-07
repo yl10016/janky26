@@ -128,6 +128,30 @@ export default function Portfolio() {
         </div>
       </div>
 
+      {/* Asset class breakdown */}
+      {result.assetClassBreakdown && (
+        <div className="grid grid-cols-3 gap-6 mb-10">
+          {[
+            { label: 'Equity', value: result.assetClassBreakdown.equity, color: '#F81894' },
+            { label: 'Bonds', value: result.assetClassBreakdown.bonds, color: '#6366f1' },
+            { label: 'Alternatives', value: result.assetClassBreakdown.alts, color: '#f59e0b' },
+          ].map(cls => (
+            <div key={cls.label} className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+              <div className="text-sm text-gray-500 mb-1">{cls.label}</div>
+              <div className="text-3xl font-bold" style={{ color: cls.color }}>
+                {(cls.value * 100).toFixed(1)}%
+              </div>
+              <div className="mt-3 h-2 rounded-full bg-gray-100 overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{ width: `${cls.value * 100}%`, backgroundColor: cls.color }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
         <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">

@@ -243,6 +243,25 @@ export function optimizePortfolio(means, covMatrix, gamma) {
   return { weights, mu: stats.mu, variance: stats.variance, vol: stats.vol, eu };
 }
 
+const BOND_TICKERS = ['BND', 'TLT', 'IEF', 'SHY', 'AGG', 'LQD'];
+const EQUITY_TICKERS = ['SPY', 'QQQ', 'IWM', 'VTI', 'EFA', 'EEM', 'XLK', 'XLF', 'XLE', 'XLV'];
+const ALT_TICKERS = ['VNQ', 'GLD', 'SLV', 'DBC'];
+
+/**
+ * Compute asset class breakdown (bonds / equity / alts) from holdings.
+ * @param {{ ticker: string, weight: number }[]} holdings
+ * @returns {{ bonds: number, equity: number, alts: number }}
+ */
+export function computeAssetClassBreakdown(holdings) {
+  let bonds = 0, equity = 0, alts = 0;
+  for (const { ticker, weight } of holdings) {
+    if (BOND_TICKERS.includes(ticker)) bonds += weight;
+    else if (EQUITY_TICKERS.includes(ticker)) equity += weight;
+    else if (ALT_TICKERS.includes(ticker)) alts += weight;
+  }
+  return { bonds, equity, alts };
+}
+
 /**
  * Generate template portfolios for comparison / efficient frontier display.
  * Returns an array of { name, weights } objects.
@@ -255,9 +274,9 @@ export function generateTemplatePortfolios(numAssets, assetNames) {
   templates.push({ name: 'Equal Weight', weights: eqWeight });
 
   // Find indices by asset class
-  const bondTickers = ['BND', 'TLT', 'IEF', 'SHY', 'AGG', 'LQD'];
-  const equityTickers = ['SPY', 'QQQ', 'IWM', 'VTI', 'EFA', 'EEM', 'XLK', 'XLF', 'XLE', 'XLV'];
-  const altTickers = ['VNQ', 'GLD', 'SLV', 'DBC'];
+  const bondTickers = BOND_TICKERS;
+  const equityTickers = EQUITY_TICKERS;
+  const altTickers = ALT_TICKERS;
 
   const bondIdx = assetNames.map((name, i) => bondTickers.includes(name) ? i : -1).filter(i => i >= 0);
   const equityIdx = assetNames.map((name, i) => equityTickers.includes(name) ? i : -1).filter(i => i >= 0);
@@ -340,8 +359,11 @@ export function runOptimization(marketData, tickers, gamma) {
   })).filter(p => p.weight > 0.001)
     .sort((a, b) => b.weight - a.weight);
 
+  const assetClassBreakdown = computeAssetClassBreakdown(portfolio);
+
   return {
     portfolio,
+    assetClassBreakdown,
     expectedReturn: optimal.mu,
     volatility: optimal.vol,
     expectedUtility: optimal.eu,
